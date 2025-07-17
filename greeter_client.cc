@@ -19,7 +19,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
-
+#include <fstream>
 #include <grpcpp/grpcpp.h>
 
 #ifdef BAZEL_BUILD
@@ -34,7 +34,8 @@ using grpc::Status;
 using helloworld::Greeter;
 using helloworld::HelloReply;
 using helloworld::HelloRequest;
-
+using helloworld::FileRequest;
+using helloworld::FileChunk;
 class GreeterClient {
  public:
   GreeterClient(std::shared_ptr<Channel> channel)
@@ -119,6 +120,45 @@ private:
 };
 
 
+class FileClient {
+public:
+    FileClient(std::shared_ptr<Channel> channel)
+        : stub_(Greeter::NewStub(channel)) {}
+
+    void DownloadFile(const std::string& filename, const std::string& output_path) {
+        FileRequest request;
+        request.set_filename(filename);
+        ClientContext context;
+
+        std::unique_ptr<grpc::ClientReader<FileChunk>> reader(
+            stub_->DownloadFile(&context, request));
+
+        std::ofstream output_file(output_path, std::ios::out | std::ios::binary);
+        if (!output_file.is_open()) {
+            std::cerr << "Failed to open output file: " << output_path << std::endl;
+            return;
+        }
+
+        FileChunk chunk;
+        while (reader->Read(&chunk)) {
+            output_file.write(chunk.content().data(), chunk.content().size());
+        }
+
+        Status status = reader->Finish();
+        if (status.ok()) {
+            std::cout << "File downloaded successfully." << std::endl;
+        } else {
+            std::cerr << "gRPC failed: " << status.error_message() << filename << std::endl;
+        }
+
+        output_file.close();
+    }
+
+private:
+    std::unique_ptr<Greeter::Stub> stub_;
+};
+
+
 int main(int argc, char** argv) {
   std::string address = "localhost";
   std::string port = "50051";
@@ -143,6 +183,9 @@ int main(int argc, char** argv) {
   AuthClient client(grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials()));
     std::string token = client.GenerateToken(user);
     std::cout << "Received token: " << token << std::endl;
+
+    FileClient fclient(grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials()));
+    fclient.DownloadFile("New Rich Text Document.rtf", "C:\\Users\\DELL\\Desktop\\grpc_downloaded_file.txt");
 
   return 0;
 }

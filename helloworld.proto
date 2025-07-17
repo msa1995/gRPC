@@ -30,6 +30,8 @@ service Greeter {
   rpc SayHelloAgain (HelloRequest) returns (HelloReply) {}
 
   rpc GenerateToken(HelloRequest) returns ( HelloReply);
+
+  rpc DownloadFile(FileRequest) returns (stream FileChunk);
 }
 
 // The request message containing the user's name.
@@ -44,4 +46,12 @@ message HelloReply {
   string message = 1;
   string client_id = 2;
   string set_token = 3;
+}
+
+message FileRequest {
+  string filename = 1;
+}
+
+message FileChunk {
+  bytes content = 1;
 }

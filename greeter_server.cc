@@ -22,6 +22,7 @@
 #include <jwt-cpp/jwt.h>
 #include <grpcpp/grpcpp.h>
 
+#include <fstream>
 #ifdef BAZEL_BUILD
 #include "helloworld.grpc.pb.h"
 #else
@@ -32,10 +33,13 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
+using grpc::ServerWriter;
+
 using helloworld::HelloRequest;
 using helloworld::HelloReply;
 using helloworld::Greeter;
-
+using helloworld::FileRequest;
+using helloworld::FileChunk;
 // Logic and data behind the server's behavior.
 class GreeterServiceImpl final : public Greeter::Service {
   Status SayHello(ServerContext* context, const HelloRequest* request,
@@ -44,7 +48,7 @@ class GreeterServiceImpl final : public Greeter::Service {
     reply->set_message(prefix + request->name());
     return Status::OK;
   }
-
+//say hellow again
   Status SayHelloAgain(ServerContext* context, const HelloRequest* request,
                        HelloReply* reply) override {
     std::string prefix("Hello again ");
@@ -53,7 +57,7 @@ class GreeterServiceImpl final : public Greeter::Service {
   }
 
   const std::string kSecret = "your-256-bit-secret";
-
+//generate token
   Status GenerateToken(ServerContext* context, const HelloRequest* request, HelloReply* reply) override {
         std::string client_id = request->client_id();
 
@@ -68,6 +72,26 @@ class GreeterServiceImpl final : public Greeter::Service {
 
         reply->set_set_token(token);
         std::cout << "Issued token for " << client_id << ": " << token << std::endl;
+        return Status::OK;
+    }
+//file generation
+    Status DownloadFile(ServerContext* context, const FileRequest* request, ServerWriter<FileChunk>* writer) override {
+        std::string base_path = "C:/Users/DELL/Desktop/gRPC/grpc_getting_started/files/";
+        std::string full_path = base_path + request->filename();
+        std::ifstream file(full_path, std::ios::binary);
+        if (!file.is_open()) {
+            return Status(grpc::StatusCode::NOT_FOUND, "File not found");
+        }
+
+        const size_t buffer_size = 1024;
+        char buffer[buffer_size];
+        while (file.read(buffer, buffer_size) || file.gcount() > 0) {
+            FileChunk chunk;
+            chunk.set_content(buffer, file.gcount());
+            writer->Write(chunk);
+        }
+
+        file.close();
         return Status::OK;
     }
 };
