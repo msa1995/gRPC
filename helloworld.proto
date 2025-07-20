@@ -32,6 +32,8 @@ service Greeter {
   rpc GenerateToken(HelloRequest) returns ( HelloReply);
 
   rpc DownloadFile(FileRequest) returns (stream FileChunk);
+
+  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
 }
 
 // The request message containing the user's name.
@@ -54,4 +56,10 @@ message FileRequest {
 
 message FileChunk {
   bytes content = 1;
+}
+
+message ChatMessage {
+  string user = 1;
+  string message = 2;
+  int64 timestamp = 3; 
 }

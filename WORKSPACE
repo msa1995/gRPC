@@ -55,3 +55,9 @@ cc_library(
 """,
 )
 
+
+local_repository(
+    name = "my_linux_toolchain",
+    path = "C:/Users/DELL/Downloads/x86_64-15.1.0-release-win32-seh-msvcrt-rt_v12-rev0/mingw64",
+)
+

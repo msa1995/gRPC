@@ -19,6 +19,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <fstream>
 #include <grpcpp/grpcpp.h>
 
@@ -30,12 +31,15 @@
 
 using grpc::Channel;
 using grpc::ClientContext;
+using grpc::ClientReaderWriter;
 using grpc::Status;
 using helloworld::Greeter;
 using helloworld::HelloReply;
 using helloworld::HelloRequest;
 using helloworld::FileRequest;
 using helloworld::FileChunk;
+
+using helloworld::ChatMessage;
 class GreeterClient {
  public:
   GreeterClient(std::shared_ptr<Channel> channel)
@@ -158,34 +162,123 @@ private:
     std::unique_ptr<Greeter::Stub> stub_;
 };
 
+class ChatClient {
+public:
+    ChatClient(std::shared_ptr<Channel> channel) 
+        : stub_(Greeter::NewStub(channel)) {}
+
+    void Chat(const std::string& username) {
+    ClientContext context;
+    std::shared_ptr<ClientReaderWriter<ChatMessage, ChatMessage>> stream(stub_->Chat(&context));
+
+    std::atomic<bool> done(false);
+
+    // Writer thread
+    std::thread writer([stream, username, &done]() {
+        std::string input;
+        while (true) {
+            std::getline(std::cin, input);
+
+            if (input == "exit" || input == "quit") {
+                std::cout << "Exiting chat...\n";
+                stream->WritesDone();  // Finish sending to server
+                done = true;
+                break;
+            }
+
+            ChatMessage msg;
+            msg.set_user(username);
+            msg.set_message(input);
+            msg.set_timestamp(time(nullptr));
+            stream->Write(msg);
+        }
+    });
+
+    // Reader loop
+    ChatMessage server_msg;
+    while (stream->Read(&server_msg)) {
+        std::cout << "[" << server_msg.user() << "]: " << server_msg.message() << "\n";
+    }
+
+    writer.join();  // Wait for the writer thread to finish
+    stream->Finish();  // Finalize the stream
+}
+
+
+private:
+    std::unique_ptr<Greeter::Stub> stub_;
+};
+
 
 int main(int argc, char** argv) {
-  std::string address = "localhost";
-  std::string port = "50051";
-  std::string server_address = address + ":" + port;
-  std::cout << "Client querying server address: " << server_address << std::endl;
+    std::string address = "localhost";
+    std::string port = "50051";
+    std::string server_address = address + ":" + port;
+    std::cout << "Client connected to: " << server_address << std::endl;
 
+    auto channel = grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials());
+    GreeterClient greeter(channel);
+    AuthClient auth(channel);
+    FileClient file_client(channel);
+    ChatClient chat(channel); // Uncomment if Chat is needed
 
-  // Instantiate the client. It requires a channel, out of which the actual RPCs
-  // are created. This channel models a connection to an endpoint (in this case,
-  // localhost at port 50051). We indicate that the channel isn't authenticated
-  // (use of InsecureChannelCredentials()).
-  GreeterClient greeter(grpc::CreateChannel(
-      server_address, grpc::InsecureChannelCredentials()));
-  std::string user("Muhannad");
+    std::string user = "Muhannad";
 
-  std::string reply = greeter.SayHello(user);
-  std::cout << "Greeter received: " << reply << std::endl;
+    while (true) {
+        std::cout << "\nSelect an option:\n"
+                  << "1. Say Hello\n"
+                  << "2. Say Hello Again\n"
+                  << "3. Generate Token\n"
+                  << "4. Download File\n"
+                  << "5. Chat\n"  // Uncomment if Chat is active
+                  << "6. Exit\n"
+                  << "Enter choice: ";
 
-  reply = greeter.SayHelloAgain(user);
-  std::cout << "Greeter received: " << reply << std::endl;
+        int choice;
+        std::cin >> choice;
+        std::cin.ignore();  // flush newline
 
-  AuthClient client(grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials()));
-    std::string token = client.GenerateToken(user);
-    std::cout << "Received token: " << token << std::endl;
+        switch (choice) {
+            case 1: {
+                std::string reply = greeter.SayHello(user);
+                std::cout << "Response: " << reply << std::endl;
+                break;
+            }
+            case 2: {
+                std::string reply = greeter.SayHelloAgain(user);
+                std::cout << "Response: " << reply << std::endl;
+                break;
+            }
+            case 3: {
+                std::string token = auth.GenerateToken(user);
+                std::cout << "Token: " << token << std::endl;
+                break;
+            }
+            case 4: {
+                std::string filename, output_path;
+                std::cout << "Enter filename to download: ";
+                std::getline(std::cin, filename);
+                std::cout << "Enter output path: ";
+                std::getline(std::cin, output_path);
+                file_client.DownloadFile(filename, output_path);
+                break;
+            }
+            case 5: {
+                std::string username;
+                std::cout << "Enter your chat username: ";
+                std::getline(std::cin, username);
+                chat.Chat(username);
+                break;
+            }
+            case 6:
+                std::cout << "Exiting client.\n";
+                return 0;
+            default:
+                std::cout << "Invalid option.\n";
+                break;
+        }
+    }
 
-    FileClient fclient(grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials()));
-    fclient.DownloadFile("New Rich Text Document.rtf", "C:\\Users\\DELL\\Desktop\\grpc_downloaded_file.txt");
-
-  return 0;
+    return 0;
 }
+

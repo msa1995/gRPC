@@ -19,6 +19,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <jwt-cpp/jwt.h>
 #include <grpcpp/grpcpp.h>
 
@@ -34,12 +35,15 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 using grpc::ServerWriter;
+using grpc::ServerReaderWriter;
 
 using helloworld::HelloRequest;
 using helloworld::HelloReply;
 using helloworld::Greeter;
 using helloworld::FileRequest;
 using helloworld::FileChunk;
+
+using helloworld::ChatMessage;
 // Logic and data behind the server's behavior.
 class GreeterServiceImpl final : public Greeter::Service {
   Status SayHello(ServerContext* context, const HelloRequest* request,
@@ -94,6 +98,42 @@ class GreeterServiceImpl final : public Greeter::Service {
         file.close();
         return Status::OK;
     }
+//chat 
+    grpc::Status Chat(ServerContext* context,
+                  ServerReaderWriter<ChatMessage, ChatMessage>* stream) override {
+    ChatMessage msg;
+    bool running = true;
+
+    // Writer thread sends messages periodically
+    std::thread writer([&]() {
+        while (running) {
+            ChatMessage reply;
+            reply.set_user("Server");
+            reply.set_message("Pong from server");
+            reply.set_timestamp(time(nullptr));
+            stream->Write(reply);
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        }
+    });
+
+    // Main reader loop
+    while (stream->Read(&msg)) {
+        std::string message = msg.message();
+        std::cout << "[" << msg.user() << "]: " << message << "\n";
+
+        // If client sends "exit", break and end chat for that client
+        if (message == "exit") {
+            std::cout << "[INFO] Client exited the chat.\n";
+            break;
+        }
+    }
+
+    running = false;  // Stop writer thread
+    writer.join();    // Clean up the writer thread
+
+    return grpc::Status::OK;
+}
+
 };
 
 
