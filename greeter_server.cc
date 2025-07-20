@@ -109,7 +109,7 @@ class GreeterServiceImpl final : public Greeter::Service {
         while (running) {
             ChatMessage reply;
             reply.set_user("Server");
-            reply.set_message("Pong from server");
+            reply.set_message("Hello from server");
             reply.set_timestamp(time(nullptr));
             stream->Write(reply);
             std::this_thread::sleep_for(std::chrono::seconds(5));
